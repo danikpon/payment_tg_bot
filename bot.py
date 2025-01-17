@@ -287,7 +287,7 @@ async def handle_pay_standard(callback: CallbackQuery):
     logger.info(f"Пользователь {user_id} выбрал оплату 50 руб")
     amount = 50  # Стандартная сумма
     await callback.message.answer(
-        "Вы выбрали оплату 50 руб. Вы можете перевести средства по номеру +79788030694 или перейти по ссылке для оплаты через Т-Банк:",
+        "Вы выбрали оплату 50 руб. Вы можете перевести средства по номеру +number или перейти по ссылке для оплаты через Т-Банк:",
         reply_markup=create_payment_keyboard(amount=amount)
     )
     await callback.answer()
@@ -510,7 +510,7 @@ async def process_user_custom_amount(message: Message, state: FSMContext):
         [InlineKeyboardButton(text=f"Оплатить {amount} руб", url=payment_url)]
     ])
     await message.answer(
-        f"Вы выбрали оплату {amount} руб. Вы можете перевести средства по номеру +79788030694 или перейти по ссылке для оплаты через Т-Банк:",
+        f"Вы выбрали оплату {amount} руб. Вы можете перевести средства по номеру +nember или перейти по ссылке для оплаты через Т-Банк:",
         reply_markup=keyboard
     )
     await message.answer("После оплаты нажмите /check для подтверждения.")
