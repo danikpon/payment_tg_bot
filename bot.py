@@ -1,5 +1,3 @@
-# bot.py
-
 import asyncio
 import os
 from datetime import datetime, timedelta
@@ -289,7 +287,7 @@ async def handle_pay_standard(callback: CallbackQuery):
     logger.info(f"Пользователь {user_id} выбрал оплату 50 руб")
     amount = 50  # Стандартная сумма
     await callback.message.answer(
-        "Вы выбрали оплату 50 руб. Пожалуйста, перейдите по ссылке для оплаты:",
+        "Вы выбрали оплату 50 руб. Вы можете перевести средства по номеру +79788030694 или перейти по ссылке для оплаты через Т-Банк:",
         reply_markup=create_payment_keyboard(amount=amount)
     )
     await callback.answer()
@@ -507,12 +505,12 @@ async def process_user_custom_amount(message: Message, state: FSMContext):
     await state.update_data(custom_amount=amount)
 
     # Отправляем кнопку оплаты с указанной суммой
-    payment_url = f"{PAYMENT_LINK}?amount={amount}"  # Настройте URL оплаты согласно вашей платёжной системе
+    payment_url = f"{PAYMENT_LINK}?amount={amount}"
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=f"Оплатить {amount} руб", url=payment_url)]
     ])
     await message.answer(
-        f"Вы выбрали оплату {amount} руб. Пожалуйста, перейдите по ссылке для оплаты:",
+        f"Вы выбрали оплату {amount} руб. Вы можете перевести средства по номеру +79788030694 или перейти по ссылке для оплаты через Т-Банк:",
         reply_markup=keyboard
     )
     await message.answer("После оплаты нажмите /check для подтверждения.")
@@ -606,9 +604,22 @@ async def admin_send_message_command(message: Message, state: FSMContext):
         logger.warning(f"Пользователь {message.from_user.id} попытался использовать admin команду /send_message")
         return
 
-    await message.answer("Введите @username и сообщение через пробел (например: @danikpon Привет, это тест!).")
+    await message.answer("Введите @username и сообщение через пробел...")
     await state.set_state(AdminStates.waiting_for_send_message)
     logger.info("Администратор инициировал отправку сообщения пользователю")
+
+@router.message(StateFilter(AdminStates.waiting_for_send_message))
+async def process_send_message(message: Message, state: FSMContext):
+    try:
+        parts = message.text.strip().split(maxsplit=1)
+        if len(parts) != 2:
+            ...
+        username_input, text = parts
+        username = normalize_username(username_input)
+        logger.info(f"[DEBUG] Сейчас будем вызывать get_user_by_username('{username}')")  # <-- добавили
+    except ValueError:
+        ...
+    user = await get_user_by_username(username)
 
 @router.message(Command("broadcast"))
 async def admin_broadcast_command(message: Message, state: FSMContext):
@@ -696,8 +707,8 @@ async def process_gift_subscription(message: Message, state: FSMContext):
     user_id = user[0]
     new_expire_date = datetime.now() + timedelta(days=days)
     await update_expire_date(user_id, new_expire_date.isoformat())
-    # Опционально можно учесть скидки или другие правила
-    await update_total_paid(user_id, 0)  # Если подаренная подписка не требует оплаты
+    # Опционально можно учесть стоимость, если подарок не бесплатный
+    await update_total_paid(user_id, 0)
     await message.answer(f"Подарена подписка пользователю @{username} на {days} дней.")
     await notify_admin(f"Администратор подарил {days} дней подписки пользователю @{username}.")
     # Уведомляем пользователя о подарке
@@ -728,13 +739,44 @@ async def process_broadcast_text(message: Message, state: FSMContext):
     await state.clear()
     logger.info(f"Рассылка завершена. Уведомлено пользователей: {success}.")
 
-# ============ Обработчики файлов и кнопок ============
-# Обработчик кнопки "Да" для отправки файла
-# Обработчик кнопки "Нет" для отправки файла
-# Обработчик получения файла от администратора
-# Обработчик отправки сообщения администратором
-# Всё настроено выше
+# ============ Обработчик
+# === ИЗМЕНЕНИЕ НАЧАЛО ===
+# Добавляем функцию проверки, у кого подписка истекает ровно через 1 день
+async def check_subscriptions_expiring():
+    """
+    Ежедневная проверка: если у пользователя подписка заканчивается завтра,
+    отправить уведомление ему и администратору.
+    """
+    now = datetime.now()
+    users = await get_all_users()
+    for user in users:
+        user_id, username, expire_date_str, total_paid, parent_user_id = user
+        if expire_date_str:
+            try:
+                expire_date = datetime.fromisoformat(expire_date_str)
+                # Если до окончания подписки ровно 1 день
+                if (expire_date - now).days == 1:
+                    # Уведомляем пользователя (если это не админ)
+                    if user_id != ADMIN_CHAT_ID:
+                        try:
+                            await bot.send_message(
+                                user_id,
+                                f"⚠️ Ваша подписка заканчивается завтра!\n"
+                                f"Дата окончания: {expire_date.strftime('%Y-%m-%d')}.\n"
+                                f"Продлите подписку, чтобы VPN не отключился."
+                            )
+                        except Exception as e:
+                            logger.error(f"Не удалось отправить уведомление пользователю {user_id}: {e}")
 
+                    # Уведомляем администратора
+                    username_display = f"@{username}" if username else f"id_{user_id}"
+                    await bot.send_message(
+                        ADMIN_CHAT_ID,
+                        f"⚠️ У пользователя {username_display} подписка истекает завтра ({expire_date.strftime('%Y-%m-%d')})."
+                    )
+            except ValueError:
+                logger.error(f"Некорректный формат даты у пользователя {user_id}: {expire_date_str}")
+# === ИЗМЕНЕНИЕ КОНЕЦ ===
 # ============ Обработчик ошибок ============
 @router.errors()
 async def global_error_handler(update: Update, exception: Exception):
@@ -753,6 +795,15 @@ async def main():
         BotCommand(command="check", description="Проверить подписку"),
     ]
     await bot.set_my_commands(user_commands)
+
+    # === ИЗМЕНЕНИЕ НАЧАЛО: добавляем задачу в планировщик ===
+    scheduler.add_job(
+        check_subscriptions_expiring,
+        "cron", 
+        hour=14,      # запуск в полночь
+        minute=4,    # можно менять на любое удобное время
+    )
+    # === ИЗМЕНЕНИЕ КОНЕЦ ===
 
     # Запуск планировщика задач
     scheduler.start()

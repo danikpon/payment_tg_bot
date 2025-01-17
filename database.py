@@ -42,13 +42,21 @@ async def get_user(user_id: int):
         return user
 
 async def get_user_by_username(username: str):
+    # === Добавляем отладочные логи для диагностики ===
+    logger.info(f"[DEBUG] Пытаемся найти пользователя по username='{username}'")
+
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute("""
             SELECT user_id, username, expire_date, total_paid, parent_user_id
             FROM users
             WHERE username = ?
         """, (username,))
+
         user = await cursor.fetchone()
+
+        # Логируем, что вернул запрос
+        logger.info(f"[DEBUG] Результат поиска get_user_by_username('{username}'): {user}")
+
         return user
 
 async def update_expire_date(user_id: int, expire_date: str):
